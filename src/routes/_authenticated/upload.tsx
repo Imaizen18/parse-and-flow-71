@@ -108,8 +108,8 @@ function UploadPage() {
           .from("bank_statements")
           .update({
             status: "done",
-            period_start: dates[0],
-            period_end: dates[dates.length - 1],
+            period_start: dates[0] ?? null,
+            period_end: dates[dates.length - 1] ?? null,
             transaction_count: rows.length,
             total_debit: rows.filter((r) => r.type === "debit").reduce((s, r) => s + r.amount, 0),
             total_credit: rows.filter((r) => r.type === "credit").reduce((s, r) => s + r.amount, 0),
