@@ -14,7 +14,250 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bank_statements: {
+        Row: {
+          bank_name: string | null
+          error_message: string | null
+          file_name: string
+          file_type: string
+          file_url: string | null
+          id: string
+          period_end: string | null
+          period_start: string | null
+          status: string
+          total_credit: number
+          total_debit: number
+          transaction_count: number
+          uploaded_at: string
+          user_id: string
+        }
+        Insert: {
+          bank_name?: string | null
+          error_message?: string | null
+          file_name: string
+          file_type?: string
+          file_url?: string | null
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          status?: string
+          total_credit?: number
+          total_debit?: number
+          transaction_count?: number
+          uploaded_at?: string
+          user_id: string
+        }
+        Update: {
+          bank_name?: string | null
+          error_message?: string | null
+          file_name?: string
+          file_type?: string
+          file_url?: string | null
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          status?: string
+          total_credit?: number
+          total_debit?: number
+          transaction_count?: number
+          uploaded_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      budgets: {
+        Row: {
+          alert_threshold: number
+          category_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          limit_amount: number
+          month: string
+          user_id: string
+        }
+        Insert: {
+          alert_threshold?: number
+          category_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          limit_amount: number
+          month: string
+          user_id: string
+        }
+        Update: {
+          alert_threshold?: number
+          category_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          limit_amount?: number
+          month?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budgets_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      categories: {
+        Row: {
+          color: string
+          created_at: string
+          icon: string
+          id: string
+          is_default: boolean
+          name: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          is_default?: boolean
+          name: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      keyword_rules: {
+        Row: {
+          category_id: string
+          created_at: string
+          id: string
+          keyword: string
+          user_id: string
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          id?: string
+          keyword: string
+          user_id: string
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          id?: string
+          keyword?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "keyword_rules_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          currency: string
+          email: string | null
+          id: string
+          name: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          currency?: string
+          email?: string | null
+          id: string
+          name?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          currency?: string
+          email?: string | null
+          id?: string
+          name?: string | null
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          category_id: string | null
+          created_at: string
+          date: string
+          description: string
+          id: string
+          is_manually_categorized: boolean
+          merchant_name: string | null
+          notes: string | null
+          statement_id: string | null
+          tags: string[]
+          type: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          category_id?: string | null
+          created_at?: string
+          date: string
+          description?: string
+          id?: string
+          is_manually_categorized?: boolean
+          merchant_name?: string | null
+          notes?: string | null
+          statement_id?: string | null
+          tags?: string[]
+          type?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          category_id?: string | null
+          created_at?: string
+          date?: string
+          description?: string
+          id?: string
+          is_manually_categorized?: boolean
+          merchant_name?: string | null
+          notes?: string | null
+          statement_id?: string | null
+          tags?: string[]
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_statement_id_fkey"
+            columns: ["statement_id"]
+            isOneToOne: false
+            referencedRelation: "bank_statements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
