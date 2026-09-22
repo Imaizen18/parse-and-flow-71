@@ -45,7 +45,9 @@ function toDate(v: unknown): string | null {
   if (!s) return null;
   const dmy = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
   if (dmy) {
-    let [, d, m, y] = dmy;
+    const d = dmy[1]!;
+    const m = dmy[2]!;
+    let y = dmy[3]!;
     if (y.length === 2) y = `20${y}`;
     const dd = Number(d);
     const mm = Number(m);
@@ -73,7 +75,7 @@ export function cleanMerchant(description: string): string {
   return s
     .split(" ")
     .slice(0, 4)
-    .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w.toUpperCase()))
+    .map((w) => (w.length > 2 ? w[0]!.toUpperCase() + w.slice(1).toLowerCase() : w.toUpperCase()))
     .join(" ");
 }
 
@@ -101,7 +103,7 @@ export function guessCategoryName(text: string): string | null {
 
 export function mapRows(raw: Raw[]): ParsedRow[] {
   if (!raw.length) return [];
-  const headers = Object.keys(raw[0]);
+  const headers = Object.keys(raw[0] as Raw);
   const dateKey = pick(headers, RX.date);
   const descKey = pick(headers, RX.description) ?? headers.find((h) => !RX.date.test(h));
   const debitKey = pick(headers, RX.debit);
@@ -162,7 +164,7 @@ export async function parseStatementFile(file: File): Promise<ParsedRow[]> {
   if (ext === "xlsx" || ext === "xls") {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { cellDates: true });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const sheet = wb.Sheets[wb.SheetNames[0]!]!;
     const json = XLSX.utils.sheet_to_json<Raw>(sheet, { defval: "" });
     return mapRows(json);
   }
