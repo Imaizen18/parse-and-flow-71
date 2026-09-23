@@ -98,7 +98,10 @@ function ReportsPage() {
 
   const byDay = useMemo(() => {
     const totals = new Array(7).fill(0) as number[];
-    for (const t of debits) totals[new Date(t.date).getDay()] += t.amount;
+    for (const t of debits) {
+      const d = new Date(t.date).getDay();
+      totals[d] = (totals[d] ?? 0) + t.amount;
+    }
     const max = Math.max(1, ...totals);
     return totals.map((total, i) => ({ day: DAYS[i]!, total, intensity: total / max }));
   }, [debits]);
