@@ -68,7 +68,7 @@ export type Database = {
       budgets: {
         Row: {
           alert_threshold: number
-          category_id: string
+          category_id: string | null
           created_at: string
           id: string
           is_active: boolean
@@ -78,7 +78,7 @@ export type Database = {
         }
         Insert: {
           alert_threshold?: number
-          category_id: string
+          category_id?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
@@ -88,7 +88,7 @@ export type Database = {
         }
         Update: {
           alert_threshold?: number
-          category_id?: string
+          category_id?: string | null
           created_at?: string
           id?: string
           is_active?: boolean

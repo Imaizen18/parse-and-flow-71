@@ -49,7 +49,7 @@ function CategoriesPage() {
     const { error } = await supabase
       .from("categories")
       .insert({ user_id: auth.user.id, name: name.trim(), icon, color });
-    if (error) return toast.error("Could not create category");
+    if (error) { toast.error("Could not create category"); return; }
     setName("");
     qc.invalidateQueries();
     toast.success("Category created");
@@ -57,7 +57,7 @@ function CategoriesPage() {
 
   async function removeCategory(id: string) {
     const { error } = await supabase.from("categories").delete().eq("id", id);
-    if (error) return toast.error("Could not delete category");
+    if (error) { toast.error("Could not delete category"); return; }
     qc.invalidateQueries();
     toast.success("Category deleted");
   }
@@ -71,7 +71,7 @@ function CategoriesPage() {
       keyword: keyword.trim(),
       category_id: ruleCategory,
     });
-    if (error) return toast.error("Could not save rule");
+    if (error) { toast.error("Could not save rule"); return; }
     setKeyword("");
     qc.invalidateQueries();
     toast.success("Rule saved — it runs on future uploads");
