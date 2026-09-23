@@ -116,7 +116,8 @@ const NOISE =
 
 export function cleanMerchant(description: string): string {
   let s = description
-    .replace(/\b[\w.-]+@[\w.-]+\b/g, " ") // UPI ids / emails
+    .replace(/[*/|_\-#:;]+/g, " ")
+    .replace(/\b[\w.]+@[\w.]+\b/g, " ") // UPI ids / emails
     .replace(/[*/|_\-#:;]+/g, " ")
     .replace(/\b[0-9]{4,}\b/g, " ")
     .replace(/\b[a-z0-9]*\d{3,}[a-z0-9]*\b/gi, " ")
