@@ -8,6 +8,13 @@
       "when": 1790078998375,
       "tag": "0000_expense_tracker_core",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790164958238,
+      "tag": "0001_overall_monthly_budget",
+      "breakpoints": true
     }
   ]
 }
