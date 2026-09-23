@@ -316,14 +316,14 @@ function Dashboard() {
           {budgets.map((b) => {
             const used = byCategory.find((c) => c.id === b.category_id)?.value ?? 0;
             const pct = b.limit_amount > 0 ? Math.round((used / b.limit_amount) * 100) : 0;
-            const cat = catById[b.category_id];
+            const cat = b.category_id ? catById[b.category_id] : undefined;
             const tone =
               pct >= 100 ? "text-destructive" : pct >= b.alert_threshold ? "text-warning" : "text-success";
             return (
               <div key={b.id} className="surface-card p-5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">
-                    {cat?.icon} {cat?.name ?? "Category"}
+                    {b.category_id ? `${cat?.icon ?? ""} ${cat?.name ?? "Category"}` : "🎯 Overall monthly budget"}
                   </span>
                   <span className={`text-sm font-semibold ${tone}`}>{pct}%</span>
                 </div>

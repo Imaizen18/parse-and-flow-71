@@ -58,7 +58,7 @@ function BudgetsPage() {
 
   async function addBudget() {
     const limit = Number(amount);
-    if (!categoryId || !limit) return toast.error("Pick a category and an amount");
+    if (!categoryId || !limit) { toast.error("Pick a category and an amount"); return; }
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) return;
     const { error } = await supabase.from("budgets").upsert(
@@ -71,7 +71,7 @@ function BudgetsPage() {
       },
       { onConflict: "user_id,category_id,month" },
     );
-    if (error) return toast.error("Could not save budget");
+    if (error) { toast.error("Could not save budget"); return; }
     setAmount("");
     qc.invalidateQueries();
     toast.success("Budget saved");
