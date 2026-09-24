@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
 import { formatCompact, formatMoney, monthLabel } from "@/lib/format";
+import { AskSpending } from "@/components/ask-spending";
 
 export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({
@@ -169,6 +170,9 @@ function ReportsPage() {
           Patterns pulled from {txns.length} transactions.
         </p>
       </div>
+
+      <AskSpending />
+
 
       <div className="surface-card p-5">
         <div className="flex items-center gap-2">
