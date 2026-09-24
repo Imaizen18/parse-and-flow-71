@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download, Search, Trash2 } from "lucide-react";
+import { findDuplicates, redundantIds } from "@/lib/duplicates";
+
+const PAGE_SIZE = 50;
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
@@ -43,6 +46,9 @@ function TransactionsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [sort, setSort] = useState("date-desc");
+  const [page, setPage] = useState(0);
+  const [showDups, setShowDups] = useState(false);
 
   const catById = useMemo(
     () => Object.fromEntries((categories ?? []).map((c) => [c.id, c])),
@@ -107,6 +113,38 @@ function TransactionsPage() {
   }
 
   const total = filtered.reduce((s, t) => s + (t.type === "debit" ? t.amount : -t.amount), 0);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    const name = (t: (typeof arr)[number]) => (t.merchant_name || t.description).toLowerCase();
+    arr.sort((a, b) => {
+      switch (sort) {
+        case "date-asc": return a.date.localeCompare(b.date);
+        case "amount-desc": return b.amount - a.amount;
+        case "amount-asc": return a.amount - b.amount;
+        case "merchant": return name(a).localeCompare(name(b));
+        default: return b.date.localeCompare(a.date);
+      }
+    });
+    return arr;
+  }, [filtered, sort]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = sorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+  const dupGroups = useMemo(() => findDuplicates(txns ?? []), [txns]);
+
+  async function removeIds(ids: string[]) {
+    if (!ids.length || !confirm(`Delete ${ids.length} duplicate transaction(s)?`)) return;
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from("transactions").delete().in("id", ids.slice(i, i + 200));
+      if (error) {
+        toast.error("Could not delete duplicates");
+        return;
+      }
+    }
+    qc.invalidateQueries();
+    toast.success(`Removed ${ids.length} duplicate${ids.length > 1 ? "s" : ""}`);
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -183,6 +221,85 @@ function TransactionsPage() {
         </div>
       )}
 
+      {dupGroups.length > 0 && (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Copy className="size-4 text-warning" />
+              <span>
+                {dupGroups.length} possible duplicate group{dupGroups.length > 1 ? "s" : ""} (
+                {redundantIds(dupGroups).length} extra copies)
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowDups((v) => !v)}>
+                {showDups ? "Hide" : "Review"}
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => removeIds(redundantIds(dupGroups))}>
+                <Trash2 className="mr-1 size-4" /> Remove all extras
+              </Button>
+            </div>
+          </div>
+          {showDups && (
+            <ul className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+              {dupGroups.map((g) => (
+                <li key={g.key} className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate">
+                    {formatDate(g.date)} · {g.label} · {formatMoney(g.amount, currency)} ×{g.items.length}
+                  </span>
+                  <Button size="sm" variant="ghost" onClick={() => removeIds(g.items.slice(1).map((t) => t.id))}>
+                    Keep one
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground">Sort</span>
+          <Select value={sort} onValueChange={(v) => { setSort(v); setPage(0); }}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="date-desc">Newest first</SelectItem>
+              <SelectItem value="date-asc">Oldest first</SelectItem>
+              <SelectItem value="amount-desc">Largest amount</SelectItem>
+              <SelectItem value="amount-asc">Smallest amount</SelectItem>
+              <SelectItem value="merchant">Merchant A–Z</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              setSelected((s) => (s.length === pageRows.length ? [] : pageRows.map((t) => t.id)))
+            }
+          >
+            Select page
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground">
+            Page {safePage + 1} of {pageCount}
+          </span>
+          <Button variant="outline" size="icon" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={safePage >= pageCount - 1}
+            onClick={() => setPage(safePage + 1)}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      </div>
+
       <div className="surface-card overflow-hidden">
         {isLoading ? (
           <div className="space-y-2 p-4">
@@ -196,7 +313,7 @@ function TransactionsPage() {
           </p>
         ) : (
           <ul className="divide-y divide-border">
-            {filtered.slice(0, 300).map((t) => (
+            {pageRows.map((t) => (
               <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <Checkbox
                   checked={selected.includes(t.id)}
