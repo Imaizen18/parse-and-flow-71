@@ -65,18 +65,6 @@ function AuthPage() {
     }
   }
 
-  async function google() {
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
-    if (result.error) {
-      toast.error("Google sign-in failed");
-      return;
-    }
-    if (result.redirected) return;
-    navigate({ to: "/dashboard" });
-  }
-
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
@@ -86,7 +74,6 @@ function AuthPage() {
           </div>
           <span className="text-xl font-bold tracking-tight">Ledger</span>
         </Link>
-
         <div className="surface-card p-6 sm:p-8">
           <h1 className="text-2xl font-bold tracking-tight">
             {mode === "signin" ? "Welcome back" : "Create your account"}
@@ -96,7 +83,6 @@ function AuthPage() {
               ? "Sign in to see your spending."
               : "Start tracking your expenses in minutes."}
           </p>
-
           <form onSubmit={submit} className="mt-6 space-y-4">
             {mode === "signup" && (
               <div className="space-y-2">
@@ -137,17 +123,7 @@ function AuthPage() {
               {mode === "signin" ? "Sign in" : "Create account"}
             </Button>
           </form>
-
-          <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="h-px flex-1 bg-border" />
-            or
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
-          <Button variant="outline" className="w-full" onClick={google}>
-            Continue with Google
-          </Button>
-
+          
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {mode === "signin" ? "No account yet?" : "Already have an account?"}{" "}
             <button

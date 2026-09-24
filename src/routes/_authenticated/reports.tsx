@@ -173,7 +173,6 @@ function ReportsPage() {
 
       <AskSpending />
 
-
       <div className="surface-card p-5">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-primary" />
@@ -188,7 +187,6 @@ function ReportsPage() {
           ))}
         </ul>
       </div>
-
       <div className="surface-card p-5">
         <h2 className="font-semibold">12-month trend</h2>
         <div className="mt-4 h-64">
@@ -217,7 +215,6 @@ function ReportsPage() {
           </ResponsiveContainer>
         </div>
       </div>
-
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="surface-card p-5">
           <div className="flex items-center gap-2">
@@ -236,7 +233,6 @@ function ReportsPage() {
             ))}
           </ul>
         </div>
-
         <div className="surface-card p-5">
           <div className="flex items-center gap-2">
             <Repeat className="size-4 text-primary" />
@@ -263,7 +259,6 @@ function ReportsPage() {
           )}
         </div>
       </div>
-
       <div className="surface-card p-5">
         <div className="flex items-center gap-2">
           <TrendingDown className="size-4 text-primary" />
