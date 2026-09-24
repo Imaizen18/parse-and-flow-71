@@ -75,28 +75,52 @@ export const askSpending = createServerFn({ method: "POST" })
     const apiKey = process.env["LOVABLE_API_KEY"];
     if (!apiKey) throw new Error("AI is not configured");
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: {
+        "Lovable-API-Key": apiKey,
+        "X-Lovable-AIG-SDK": "fetch",
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         model: "openai/gpt-6-astra",
-        messages: [
-          {
-            role: "system",
-            content:
-              `You are a personal finance analyst. Answer only from the JSON data provided. ` +
-              `Amounts are in ${currency}. Be concise (max 6 short sentences or bullets), use concrete numbers, ` +
-              `and say plainly when the data does not cover the question. Never invent transactions.`,
-          },
-          { role: "user", content: `Data:\n${JSON.stringify(summary)}\n\nQuestion: ${data.question}` },
-        ],
+        stream: true,
+        store: false,
+        reasoning: { effort: "low" },
+        instructions:
+          `You are a personal finance analyst. Answer only from the JSON data provided. ` +
+          `Amounts are in ${currency}. Be concise (max 6 short sentences or bullets), use concrete numbers, ` +
+          `and say plainly when the data does not cover the question. Never invent transactions. Plain text, no markdown tables.`,
+        input: `Data:\n${JSON.stringify(summary)}\n\nQuestion: ${data.question}`,
       }),
     });
 
     if (res.status === 429) return { answer: "Too many requests right now — try again in a minute." };
     if (res.status === 402) return { answer: "AI credits are exhausted. Add credits to keep asking." };
-    if (!res.ok) throw new Error(`AI request failed (${res.status})`);
+    if (res.status === 403) return { answer: "AI is currently unavailable for this workspace." };
+    if (!res.ok || !res.body) throw new Error(`AI request failed (${res.status})`);
 
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    return { answer: json.choices?.[0]?.message?.content?.trim() || "No answer generated." };
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let text = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const ev = JSON.parse(payload) as { type?: string; delta?: string };
+          if (ev.type === "response.output_text.delta" && ev.delta) text += ev.delta;
+        } catch {
+          /* ignore partial */
+        }
+      }
+    }
+    return { answer: text.trim() || "No answer generated." };
   });
