@@ -37,36 +37,37 @@ export function AskSpending() {
     };
 
     try {
-      // Pulls the API key from your local .env file
-      const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+      // Use bracket notation to satisfy TypeScript's index signature requirement
+      const apiKey = import.meta.env['VITE_GEMINI_API_KEY'];
 
       if (!apiKey) {
-        setAnswer("Please add VITE_OPENAI_API_KEY to your .env file to enable AI insights.");
+        setAnswer("Please add VITE_GEMINI_API_KEY to your .env file to enable AI insights.");
         setLoading(false);
         return;
       }
 
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      const prompt = `You are a financial analyst. Answer questions based on this JSON data: ${JSON.stringify(summary)}. Keep answers under 3 sentences. Be concrete, concise, and helpful.\n\nUser Question: ${query}`;
+
+      // Switched endpoint to the stable gemini-1.5-pro model
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini", // Fast, lightweight model for data queries
-          messages: [
-            {
-              role: "system",
-              content: `You are a financial analyst. Answer questions based on this JSON data: ${JSON.stringify(summary)}. Keep answers under 3 sentences. Be concrete, concise, and helpful.`
-            },
-            { role: "user", content: query }
-          ]
+          contents: [{ parts: [{ text: prompt }] }]
         })
       });
 
       const data = await res.json();
-      if (data.choices?.[0]?.message?.content) {
-        setAnswer(data.choices[0].message.content);
+      
+      if (data.error) {
+        setAnswer(`API Error: ${data.error.message}`);
+        return;
+      }
+
+      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+        setAnswer(data.candidates[0].content.parts[0].text);
       } else {
         setAnswer("I couldn't process that request right now.");
       }
@@ -98,7 +99,7 @@ export function AskSpending() {
       </form>
 
       {answer && (
-        <div className="mt-2 rounded-md bg-secondary/50 p-4 text-sm text-secondary-foreground leading-relaxed">
+        <div className="mt-2 rounded-md bg-secondary/50 p-4 text-sm text-secondary-foreground leading-relaxed whitespace-pre-wrap">
           {answer}
         </div>
       )}

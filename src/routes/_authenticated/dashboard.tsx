@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Area,
   AreaChart,
@@ -19,6 +20,13 @@ import { formatCompact, formatMoney, monthKey, monthLabel, daysLeftInMonth } fro
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -65,49 +73,104 @@ function StatCard({
 function Dashboard() {
   const { data: profile } = useProfile();
   const currency = profile?.currency ?? "INR";
+  // @ts-ignore - get settings from profile
+  const suspiciousLimit = profile?.suspicious_limit ? Number(profile.suspicious_limit) : 5000;
+  
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-  const { data: txns, isLoading } = useTransactions({
-    from: sixMonthsAgo.toISOString().slice(0, 10),
-  });
+  // Load all transactions for parsing months
+  const { data: txns, isLoading } = useTransactions();
   const { data: categories } = useCategories();
-  const { data: budgets } = useBudgets(monthKey(monthStart));
+
+  // Initialize immediately from localStorage to prevent UI flickering on refresh
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    return localStorage.getItem("dashboard_month") || "";
+  });
+
+  // Parse available months from CSV data
+  const availableMonths = useMemo(() => {
+    if (!txns?.length) return [];
+    const m = new Set<string>();
+    txns.forEach((t) => m.add(t.date.substring(0, 7))); // format: YYYY-MM
+    return Array.from(m).sort().reverse();
+  }, [txns]);
+
+  // Synchronize backend data, local cache, and available options
+  useEffect(() => {
+    if (availableMonths.length > 0) {
+      // @ts-ignore - fetching saved month from backend profile
+      const backendMonth = profile?.dashboard_month;
+      const targetMonth = backendMonth || localStorage.getItem("dashboard_month");
+      
+      if (targetMonth && availableMonths.includes(targetMonth)) {
+        if (selectedMonth !== targetMonth) {
+          setSelectedMonth(targetMonth);
+          localStorage.setItem("dashboard_month", targetMonth);
+        }
+      } else if (!availableMonths.includes(selectedMonth)) {
+        // Fallback to the latest month if the saved one doesn't exist in data
+        setSelectedMonth(availableMonths[0]);
+        localStorage.setItem("dashboard_month", availableMonths[0]);
+      }
+    }
+  }, [availableMonths, profile, selectedMonth]);
+
+  // Save to both local cache (for speed) and backend (for cross-device sync)
+  async function handleMonthChange(month: string) {
+    setSelectedMonth(month);
+    localStorage.setItem("dashboard_month", month);
+    
+    if (profile) {
+      await supabase.from("profiles").update({ dashboard_month: month }).eq("id", profile.id);
+    }
+  }
+
+  const { data: budgets } = useBudgets(selectedMonth ? `${selectedMonth}-01` : monthKey(now));
 
   const catById = useMemo(
     () => Object.fromEntries((categories ?? []).map((c) => [c.id, c])),
     [categories],
   );
 
-  const thisMonth = useMemo(
-    () => (txns ?? []).filter((t) => new Date(t.date) >= monthStart),
-    [txns, monthStart],
-  );
+  // Filter transactions exactly to the selected month dropdown
+  const displayTxns = useMemo(() => {
+    if (!txns || !selectedMonth) return [];
+    return txns.filter((t) => t.date.startsWith(selectedMonth));
+  }, [txns, selectedMonth]);
 
-  const spent = thisMonth.filter((t) => t.type === "debit").reduce((s, t) => s + t.amount, 0);
-  const income = thisMonth.filter((t) => t.type === "credit").reduce((s, t) => s + t.amount, 0);
+  const spent = displayTxns.filter((t) => t.type === "debit").reduce((s, t) => s + t.amount, 0);
+  const income = displayTxns.filter((t) => t.type === "credit").reduce((s, t) => s + t.amount, 0);
   const net = income - spent;
   const savingsRate = income > 0 ? Math.round((net / income) * 100) : 0;
-  const uncategorized = thisMonth.filter((t) => !t.category_id).length;
+  const uncategorized = displayTxns.filter((t) => !t.category_id).length;
 
   const cashFlow = useMemo(() => {
-    const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    if (!selectedMonth) return [];
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const days = new Date(year, month, 0).getDate(); 
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+
     let ci = 0;
     let ce = 0;
     const out: { day: string; income: number; expense: number }[] = [];
+
     for (let d = 1; d <= days; d++) {
-      const dayTx = thisMonth.filter((t) => new Date(t.date).getDate() === d);
+      const dayStr = `${selectedMonth}-${String(d).padStart(2, "0")}`;
+      const dayTx = displayTxns.filter((t) => t.date === dayStr);
+      
       ci += dayTx.filter((t) => t.type === "credit").reduce((s, t) => s + t.amount, 0);
       ce += dayTx.filter((t) => t.type === "debit").reduce((s, t) => s + t.amount, 0);
-      if (d <= now.getDate()) out.push({ day: String(d), income: ci, expense: ce });
+
+      if (!isCurrentMonth || d <= now.getDate()) {
+        out.push({ day: String(d), income: ci, expense: ce });
+      }
     }
     return out;
-  }, [thisMonth, now]);
+  }, [displayTxns, selectedMonth, now]);
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
-    for (const t of thisMonth) {
+    for (const t of displayTxns) {
       if (t.type !== "debit") continue;
       const key = t.category_id ?? "none";
       map.set(key, (map.get(key) ?? 0) + t.amount);
@@ -121,7 +184,7 @@ function Dashboard() {
         icon: catById[id]?.icon ?? "❓",
       }))
       .sort((a, b) => b.value - a.value);
-  }, [thisMonth, catById]);
+  }, [displayTxns, catById]);
 
   const monthly = useMemo(() => {
     const out: { month: string; spent: number }[] = [];
@@ -136,9 +199,16 @@ function Dashboard() {
     return out;
   }, [txns, now]);
 
-  const recent = (txns ?? []).slice(0, 12);
+  const recent = displayTxns.slice(0, 12);
+  
+  const bigTransactions = useMemo(() => {
+    return displayTxns
+      .filter((t) => t.type === "debit" && t.amount >= suspiciousLimit)
+      .sort((a, b) => b.amount - a.amount);
+  }, [displayTxns, suspiciousLimit]);
 
-  if (isLoading) {
+  // Block rendering until data is loaded and the month is fully resolved
+  if (isLoading || (txns?.length && !selectedMonth)) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-9 w-48" />
@@ -156,7 +226,7 @@ function Dashboard() {
     return (
       <div className="surface-card mx-auto mt-10 max-w-lg p-10 text-center">
         <div className="bg-gradient-brand mx-auto flex size-14 items-center justify-center rounded-2xl text-2xl">
-          📄
+          💳
         </div>
         <h2 className="mt-5 text-xl font-bold">No transactions yet</h2>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -171,11 +241,29 @@ function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {monthLabel(monthStart)} <span className="text-muted-foreground">overview</span>
-        </h1>
-        <p className="text-sm text-muted-foreground">{daysLeftInMonth()} days left in the month</p>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <Select value={selectedMonth} onValueChange={handleMonthChange}>
+            <SelectTrigger className="w-[220px] text-2xl font-bold h-auto border-none bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:ml-2">
+              <SelectValue placeholder="Select month" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableMonths.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {monthLabel(`${m}-01`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-2xl font-bold text-muted-foreground tracking-tight hidden sm:block">
+            overview
+          </span>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {selectedMonth === monthKey(now).slice(0, 7) 
+            ? `${daysLeftInMonth()} days left in the month` 
+            : `Viewing historical data for ${monthLabel(`${selectedMonth}-01`)}`}
+        </p>
       </div>
 
       {uncategorized > 0 && (
@@ -193,13 +281,13 @@ function Dashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Spent this month"
+          label="Spent"
           value={formatMoney(spent, currency)}
           icon={ArrowDownRight}
           tone="down"
         />
         <StatCard
-          label="Income this month"
+          label="Income"
           value={formatMoney(income, currency)}
           icon={ArrowUpRight}
           tone="up"
@@ -319,22 +407,62 @@ function Dashboard() {
             const cat = b.category_id ? catById[b.category_id] : undefined;
             const tone =
               pct >= 100 ? "text-destructive" : pct >= b.alert_threshold ? "text-warning" : "text-success";
+
             return (
               <div key={b.id} className="surface-card p-5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">
-                    {b.category_id ? `${cat?.icon ?? ""} ${cat?.name ?? "Category"}` : "🎯 Overall monthly budget"}
+                    {b.category_id ? `${cat?.icon ?? ""} ${cat?.name ?? "Category"}` : "Overall monthly budget"}
                   </span>
                   <span className={`text-sm font-semibold ${tone}`}>{pct}%</span>
                 </div>
                 <Progress value={Math.min(pct, 100)} className="mt-3" />
                 <p className="mt-2 text-xs text-muted-foreground">
-                  {formatMoney(used, currency)} of {formatMoney(b.limit_amount, currency)} ·{" "}
+                  {formatMoney(used, currency)} of {formatMoney(b.limit_amount, currency)} •{" "}
                   {daysLeftInMonth()} days left
                 </p>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {bigTransactions.length > 0 && (
+        <div className="surface-card p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-warning" />
+              <h2 className="font-semibold text-warning">Big Transactions</h2>
+            </div>
+            <span className="text-sm font-medium text-muted-foreground">&gt; {formatMoney(suspiciousLimit, currency)}</span>
+          </div>
+          <ul className="mt-3 divide-y divide-border">
+            {bigTransactions.map((t) => {
+              const cat = t.category_id ? catById[t.category_id] : undefined;
+              return (
+                <li key={t.id} className="flex items-center gap-3 py-2.5">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-base">
+                    {cat?.icon ?? "❓"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {t.merchant_name || t.description}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(t.date).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                      })}{" "}
+                      • {cat?.name ?? "Uncategorized"}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold text-destructive">
+                    -{formatMoney(t.amount, currency)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
@@ -363,13 +491,13 @@ function Dashboard() {
                         day: "2-digit",
                         month: "short",
                       })}{" "}
-                      · {cat?.name ?? "Uncategorized"}
+                      • {cat?.name ?? "Uncategorized"}
                     </p>
                   </div>
                   <span
                     className={`text-sm font-semibold ${t.type === "credit" ? "text-success" : ""}`}
                   >
-                    {t.type === "credit" ? "+" : "−"}
+                    {t.type === "credit" ? "+" : "-"}
                     {formatMoney(t.amount, currency)}
                   </span>
                 </li>
@@ -377,7 +505,6 @@ function Dashboard() {
             })}
           </ul>
         </div>
-
         <div className="surface-card p-5 lg:col-span-2">
           <h2 className="font-semibold">Last 6 months</h2>
           <div className="mt-4 h-56">

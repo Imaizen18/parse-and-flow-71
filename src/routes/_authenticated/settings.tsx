@@ -39,27 +39,40 @@ function SettingsPage() {
 
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("INR");
+  const [suspiciousLimit, setSuspiciousLimit] = useState("5000");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setName(profile.name ?? "");
       setCurrency(profile.currency ?? "INR");
+      // Load the limit directly from the Supabase profile row
+      // @ts-ignore - bypassing strict type checks until user regenerates supabase types
+      if (profile.suspicious_limit) setSuspiciousLimit(profile.suspicious_limit.toString());
     }
   }, [profile]);
 
   async function save() {
     if (!profile) return;
     setSaving(true);
+    
+    // Save all profile settings to Supabase
     const { error } = await supabase
       .from("profiles")
-      .update({ name: name.trim(), currency })
+      .update({ 
+        name: name.trim(), 
+        currency,
+        suspicious_limit: Number(suspiciousLimit) || 5000 
+      })
       .eq("id", profile.id);
+
     setSaving(false);
+
     if (error) {
       toast.error("Could not save your settings");
       return;
     }
+
     qc.invalidateQueries();
     toast.success("Settings saved");
   }
@@ -70,6 +83,7 @@ function SettingsPage() {
       return;
     }
     const catById = Object.fromEntries((categories ?? []).map((c) => [c.id, c.name]));
+
     const header = ["Date", "Description", "Merchant", "Category", "Type", "Amount", "Notes"];
     const rows = txns.map((t) => [
       t.date,
@@ -80,9 +94,11 @@ function SettingsPage() {
       String(t.amount),
       t.notes ?? "",
     ]);
+
     const csv = [header, ...rows]
       .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
       .join("\n");
+
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
@@ -95,6 +111,7 @@ function SettingsPage() {
     if (!confirm("Delete every transaction and uploaded statement? This cannot be undone.")) return;
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) return;
+
     await supabase.from("transactions").delete().eq("user_id", auth.user.id);
     await supabase.from("bank_statements").delete().eq("user_id", auth.user.id);
     qc.invalidateQueries();
@@ -114,7 +131,7 @@ function SettingsPage() {
       </div>
 
       <div className="surface-card space-y-4 p-5">
-        <h2 className="font-semibold">Profile</h2>
+        <h2 className="font-semibold">Profile & Preferences</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="name">Name</Label>
@@ -139,9 +156,18 @@ function SettingsPage() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="limit">Suspicious Amount Limit</Label>
+            <Input 
+              id="limit" 
+              type="number" 
+              value={suspiciousLimit} 
+              onChange={(e) => setSuspiciousLimit(e.target.value)} 
+            />
+          </div>
         </div>
         <Button onClick={save} disabled={saving}>
-          <Save className="mr-1 size-4" /> {saving ? "Saving…" : "Save changes"}
+          <Save className="mr-1 size-4" /> {saving ? "Saving..." : "Save changes"}
         </Button>
       </div>
 

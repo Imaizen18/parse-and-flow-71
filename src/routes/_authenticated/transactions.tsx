@@ -1,14 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Copy, Download, Search, Trash2 } from "lucide-react";
-import { findDuplicates, redundantIds } from "@/lib/duplicates";
-
-const PAGE_SIZE = 50;
+import { Download, Search, AlertCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
 import { formatDate, formatMoney } from "@/lib/format";
+import { findDuplicates, redundantIds } from "@/lib/duplicates";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,6 +18,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 export const Route = createFileRoute("/_authenticated/transactions")({
   head: () => ({
@@ -46,14 +51,18 @@ function TransactionsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [sort, setSort] = useState("date-desc");
-  const [page, setPage] = useState(0);
-  const [showDups, setShowDups] = useState(false);
+  const [deletingDups, setDeletingDups] = useState(false);
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 50;
 
   const catById = useMemo(
     () => Object.fromEntries((categories ?? []).map((c) => [c.id, c])),
     [categories],
   );
+
+  const duplicates = useMemo(() => findDuplicates(txns ?? []), [txns]);
 
   const filtered = useMemo(() => {
     return (txns ?? []).filter((t) => {
@@ -75,11 +84,21 @@ function TransactionsPage() {
     });
   }, [txns, type, categoryFilter, from, to, search]);
 
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, type, categoryFilter, from, to]);
+
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginatedTxns = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const total = filtered.reduce((s, t) => s + (t.type === "debit" ? t.amount : -t.amount), 0);
+
   async function setCategory(ids: string[], categoryId: string) {
     const { error } = await supabase
       .from("transactions")
       .update({ category_id: categoryId, is_manually_categorized: true })
       .in("id", ids);
+
     if (error) {
       toast.error("Could not update");
       return;
@@ -87,6 +106,23 @@ function TransactionsPage() {
     setSelected([]);
     qc.invalidateQueries();
     toast.success(ids.length > 1 ? `${ids.length} transactions updated` : "Category updated");
+  }
+
+  async function removeDuplicates() {
+    const ids = redundantIds(duplicates);
+    if (!ids.length) return;
+    
+    setDeletingDups(true);
+    const { error } = await supabase.from("transactions").delete().in("id", ids);
+    setDeletingDups(false);
+    
+    if (error) {
+      toast.error("Could not remove duplicates");
+      return;
+    }
+    
+    qc.invalidateQueries();
+    toast.success(`Cleaned up ${ids.length} overlapping duplicate transactions`);
   }
 
   function exportCsv() {
@@ -112,53 +148,40 @@ function TransactionsPage() {
     URL.revokeObjectURL(url);
   }
 
-  const total = filtered.reduce((s, t) => s + (t.type === "debit" ? t.amount : -t.amount), 0);
-
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    const name = (t: (typeof arr)[number]) => (t.merchant_name || t.description).toLowerCase();
-    arr.sort((a, b) => {
-      switch (sort) {
-        case "date-asc": return a.date.localeCompare(b.date);
-        case "amount-desc": return b.amount - a.amount;
-        case "amount-asc": return a.amount - b.amount;
-        case "merchant": return name(a).localeCompare(name(b));
-        default: return b.date.localeCompare(a.date);
-      }
-    });
-    return arr;
-  }, [filtered, sort]);
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount - 1);
-  const pageRows = sorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
-  const dupGroups = useMemo(() => findDuplicates(txns ?? []), [txns]);
-
-  async function removeIds(ids: string[]) {
-    if (!ids.length || !confirm(`Delete ${ids.length} duplicate transaction(s)?`)) return;
-    for (let i = 0; i < ids.length; i += 200) {
-      const { error } = await supabase.from("transactions").delete().in("id", ids.slice(i, i + 200));
-      if (error) {
-        toast.error("Could not delete duplicates");
-        return;
-      }
-    }
-    qc.invalidateQueries();
-    toast.success(`Removed ${ids.length} duplicate${ids.length > 1 ? "s" : ""}`);
-  }
-
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
           <p className="text-sm text-muted-foreground">
-            {filtered.length} results · net {formatMoney(total, currency)}
+            {filtered.length} results — net {formatMoney(total, currency)}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={exportCsv}>
           <Download className="mr-2 size-4" /> Export CSV
         </Button>
       </div>
+
+      {duplicates.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3">
+          <div className="flex items-center gap-2.5 text-sm">
+            <AlertCircle className="size-4 text-warning" />
+            <div>
+              <span className="font-semibold text-warning">Duplicates detected:</span> Ledger found {duplicates.length} overlapping transaction groups from multiple statement uploads.
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="bg-background text-warning border-warning/30 hover:bg-warning/20 hover:text-warning"
+            onClick={removeDuplicates} 
+            disabled={deletingDups}
+          >
+            <Trash2 className="mr-2 size-4" />
+            {deletingDups ? "Removing..." : "Remove duplicates"}
+          </Button>
+        </div>
+      )}
 
       <div className="surface-card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="relative lg:col-span-2">
@@ -205,7 +228,7 @@ function TransactionsPage() {
           <span className="text-sm">{selected.length} selected</span>
           <Select onValueChange={(v) => setCategory(selected, v)}>
             <SelectTrigger className="w-56">
-              <SelectValue placeholder="Re-categorize to…" />
+              <SelectValue placeholder="Re-categorize to..." />
             </SelectTrigger>
             <SelectContent>
               {(categories ?? []).map((c) => (
@@ -221,138 +244,88 @@ function TransactionsPage() {
         </div>
       )}
 
-      {dupGroups.length > 0 && (
-        <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm">
-              <Copy className="size-4 text-warning" />
-              <span>
-                {dupGroups.length} possible duplicate group{dupGroups.length > 1 ? "s" : ""} (
-                {redundantIds(dupGroups).length} extra copies)
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowDups((v) => !v)}>
-                {showDups ? "Hide" : "Review"}
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => removeIds(redundantIds(dupGroups))}>
-                <Trash2 className="mr-1 size-4" /> Remove all extras
-              </Button>
-            </div>
-          </div>
-          {showDups && (
-            <ul className="mt-3 max-h-80 space-y-2 overflow-y-auto">
-              {dupGroups.map((g) => (
-                <li key={g.key} className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-sm">
-                  <span className="min-w-0 truncate">
-                    {formatDate(g.date)} · {g.label} · {formatMoney(g.amount, currency)} ×{g.items.length}
-                  </span>
-                  <Button size="sm" variant="ghost" onClick={() => removeIds(g.items.slice(1).map((t) => t.id))}>
-                    Keep one
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">Sort</span>
-          <Select value={sort} onValueChange={(v) => { setSort(v); setPage(0); }}>
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="date-desc">Newest first</SelectItem>
-              <SelectItem value="date-asc">Oldest first</SelectItem>
-              <SelectItem value="amount-desc">Largest amount</SelectItem>
-              <SelectItem value="amount-asc">Smallest amount</SelectItem>
-              <SelectItem value="merchant">Merchant A–Z</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              setSelected((s) => (s.length === pageRows.length ? [] : pageRows.map((t) => t.id)))
-            }
-          >
-            Select page
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">
-            Page {safePage + 1} of {pageCount}
-          </span>
-          <Button variant="outline" size="icon" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
-            <ChevronLeft className="size-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={safePage >= pageCount - 1}
-            onClick={() => setPage(safePage + 1)}
-          >
-            <ChevronRight className="size-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="surface-card overflow-hidden">
+      <div className="surface-card overflow-hidden flex flex-col">
         {isLoading ? (
           <div className="space-y-2 p-4">
             {[0, 1, 2, 3, 4].map((i) => (
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : !filtered.length ? (
+        ) : !paginatedTxns.length ? (
           <p className="px-5 py-14 text-center text-sm text-muted-foreground">
             No transactions match these filters.
           </p>
         ) : (
-          <ul className="divide-y divide-border">
-            {pageRows.map((t) => (
-              <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <Checkbox
-                  checked={selected.includes(t.id)}
-                  onCheckedChange={(v) =>
-                    setSelected((s) => (v ? [...s, t.id] : s.filter((x) => x !== t.id)))
-                  }
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{t.merchant_name || t.description}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {formatDate(t.date)} · {t.description}
-                  </p>
-                </div>
-                <Select
-                  value={t.category_id ?? ""}
-                  onValueChange={(v) => setCategory([t.id], v)}
-                >
-                  <SelectTrigger className="w-44 shrink-0">
-                    <SelectValue placeholder="Uncategorized" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(categories ?? []).map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.icon} {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span
-                  className={`w-28 shrink-0 text-right text-sm font-semibold ${
-                    t.type === "credit" ? "text-success" : ""
-                  }`}
-                >
-                  {t.type === "credit" ? "+" : "−"}
-                  {formatMoney(t.amount, currency)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="divide-y divide-border">
+              {paginatedTxns.map((t) => (
+                <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                  <Checkbox
+                    checked={selected.includes(t.id)}
+                    onCheckedChange={(v) =>
+                      setSelected((s) => (v ? [...s, t.id] : s.filter((x) => x !== t.id)))
+                    }
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{t.merchant_name || t.description}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatDate(t.date)} — {t.description}
+                    </p>
+                  </div>
+                  <Select
+                    value={t.category_id ?? ""}
+                    onValueChange={(v) => setCategory([t.id], v)}
+                  >
+                    <SelectTrigger className="w-44 shrink-0">
+                      <SelectValue placeholder="Uncategorized" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(categories ?? []).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.icon} {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span
+                    className={`w-28 shrink-0 text-right text-sm font-semibold ${
+                      t.type === "credit" ? "text-success" : ""
+                    }`}
+                  >
+                    {t.type === "credit" ? "+" : "-"}
+                    {formatMoney(t.amount, currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="border-t border-border p-4">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <span className="text-sm text-muted-foreground px-4">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext 
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
