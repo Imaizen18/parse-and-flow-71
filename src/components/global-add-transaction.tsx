@@ -79,26 +79,38 @@ Use exactly these keys:
 Example output:
 {"amount": 250.00, "merchant_name": "Rahul Sharma", "date": "2024-09-26", "type": "debit", "description": "UPI transfer"}`;
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-flash-latest",
-    generationConfig: { maxOutputTokens: 512, temperature: 0 },
-  });
+  const modelsToTry = [
+    "gemini-1.5-flash", 
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro",
+    "gemini-flash-latest"
+  ];
 
-  // Retry up to 3 times with exponential backoff (handles transient 503s)
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt));
+  for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
+    const modelName = modelsToTry[attempt];
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: { maxOutputTokens: 512, temperature: 0 },
+    });
+
+    if (attempt > 0) {
+      console.warn(`Model failed, falling back to ${modelName}...`);
+      await new Promise((r) => setTimeout(r, 1000)); // small delay between fallbacks
+    }
+
     try {
       const result = await model.generateContent([
         prompt,
         { inlineData: { mimeType: compressed.mimeType, data: compressed.data } },
       ]);
       const raw = result.response.text();
-      if (!raw) throw new Error("Empty response from Gemini");
+      if (!raw) throw new Error(`Empty response from ${modelName}`);
       const clean = raw.replace(/```json/g, "").replace(/```/g, "").trim();
       return JSON.parse(clean) as ScannedData;
     } catch (err) {
+      console.error(`Error with ${modelName}:`, err);
       lastErr = err;
     }
   }
