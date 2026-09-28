@@ -9,12 +9,16 @@ import {
   Settings,
   LogOut,
   Menu,
+  AlertCircle,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import { GlobalAddTransaction } from "@/components/global-add-transaction";
+import { NotificationsPopover } from "@/components/notifications-popover";
+import { NotificationGenerator } from "@/components/notification-generator";
 
 const nav = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -23,6 +27,7 @@ const nav = [
   { to: "/categories", label: "Categories", icon: Tags },
   { to: "/budgets", label: "Budgets", icon: Wallet },
   { to: "/reports", label: "Insights", icon: Sparkles },
+  { to: "/suspicious", label: "Suspicious", icon: AlertCircle },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -74,9 +79,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative">
       <aside className="border-sidebar-border bg-sidebar fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r p-4 lg:flex">
-        <Brand />
+        <div className="flex items-center justify-between">
+          <Brand />
+          <NotificationsPopover />
+        </div>
         <div className="mt-6 flex-1">
           <NavList />
         </div>
@@ -84,26 +92,28 @@ export function AppShell({ children }: { children: ReactNode }) {
           <LogOut className="size-4" /> Sign out
         </Button>
       </aside>
-
       <header className="border-sidebar-border bg-sidebar/80 sticky top-0 z-20 flex items-center justify-between border-b px-4 py-3 backdrop-blur lg:hidden">
         <Brand />
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <Menu className="size-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="bg-sidebar w-64 p-4">
-            <SheetTitle className="sr-only">Navigation</SheetTitle>
-            <Brand />
-            <div className="mt-6">
-              <NavList onNavigate={() => setOpen(false)} />
-            </div>
-            <Button variant="ghost" className="mt-4 w-full justify-start gap-3" onClick={signOut}>
-              <LogOut className="size-4" /> Sign out
-            </Button>
-          </SheetContent>
-        </Sheet>
+        <div className="flex items-center gap-2">
+          <NotificationsPopover />
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Menu className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="bg-sidebar w-64 p-4">
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <Brand />
+              <div className="mt-6">
+                <NavList onNavigate={() => setOpen(false)} />
+              </div>
+              <Button variant="ghost" className="mt-4 w-full justify-start gap-3" onClick={signOut}>
+                <LogOut className="size-4" /> Sign out
+              </Button>
+            </SheetContent>
+          </Sheet>
+        </div>
       </header>
 
       <main className="px-4 pb-24 pt-6 lg:ml-60 lg:px-8 lg:pb-12">{children}</main>
@@ -121,6 +131,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         ))}
       </nav>
+
+      {/* Global Fixed Action Button */}
+      <GlobalAddTransaction />
+
+      {/* Background Notification Generator */}
+      <NotificationGenerator />
     </div>
   );
 }

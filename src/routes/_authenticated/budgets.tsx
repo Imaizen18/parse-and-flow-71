@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { CategoryIcon } from "@/components/category-icon";
 import { Plus, Target, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBudgets, useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
@@ -210,7 +211,9 @@ function BudgetsPage() {
             <SelectContent>
               {(categories ?? []).map((c) => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.icon} {c.name}
+                  <div className="flex items-center gap-2">
+                    <CategoryIcon icon={c.icon} className="size-4" /> {c.name}
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -256,8 +259,8 @@ function BudgetsPage() {
           return (
             <div key={b.id} className="surface-card p-5">
               <div className="flex items-center justify-between">
-                <span className="font-medium">
-                  {cat?.icon} {cat?.name}
+                <span className="font-medium flex items-center gap-2">
+                  {cat && <CategoryIcon icon={cat.icon} className="size-4" />} {cat?.name}
                 </span>
                 <div className="flex items-center gap-2">
                   <Switch

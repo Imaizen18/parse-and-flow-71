@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { MessageCircleQuestion, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,29 +49,13 @@ export function AskSpending() {
 
       const prompt = `You are a financial analyst. Answer questions based on this JSON data: ${JSON.stringify(summary)}. Keep answers under 3 sentences. Be concrete, concise, and helpful.\n\nUser Question: ${query}`;
 
-      // Switched endpoint to the stable gemini-1.5-pro model
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
+      // AQ. keys work via @google/generative-ai SDK (handles auth automatically)
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
-      const data = await res.json();
-      
-      if (data.error) {
-        setAnswer(`API Error: ${data.error.message}`);
-        return;
-      }
-
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        setAnswer(data.candidates[0].content.parts[0].text);
-      } else {
-        setAnswer("I couldn't process that request right now.");
-      }
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      setAnswer(text || "I couldn't process that request right now.");
     } catch (err) {
       setAnswer("An error occurred while contacting the AI.");
     } finally {

@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
 import { formatDate, formatMoney } from "@/lib/format";
 import { findDuplicates, redundantIds } from "@/lib/duplicates";
+import { CategoryIcon } from "@/components/category-icon";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,12 +48,13 @@ function TransactionsPage() {
 
   const [search, setSearch] = useState("");
   const [type, setType] = useState("all");
+  const [source, setSource] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [deletingDups, setDeletingDups] = useState(false);
-  
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
@@ -66,12 +68,23 @@ function TransactionsPage() {
 
   const filtered = useMemo(() => {
     return (txns ?? []).filter((t) => {
+      // Type filter
       if (type !== "all" && t.type !== type) return false;
+
+      // Source filter: Auto-imported txns have a statement_id, manual ones do not.
+      if (source === "manual" && t.statement_id !== null) return false;
+      if (source === "imported" && t.statement_id === null) return false;
+
+      // Category filter
       if (categoryFilter === "none" && t.category_id) return false;
       if (categoryFilter !== "all" && categoryFilter !== "none" && t.category_id !== categoryFilter)
         return false;
+
+      // Date filters
       if (from && t.date < from) return false;
       if (to && t.date > to) return false;
+
+      // Search text
       if (search) {
         const q = search.toLowerCase();
         if (
@@ -82,22 +95,46 @@ function TransactionsPage() {
       }
       return true;
     });
-  }, [txns, type, categoryFilter, from, to, search]);
+  }, [txns, type, source, categoryFilter, from, to, search]);
 
   // Reset to page 1 whenever filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, type, categoryFilter, from, to]);
+  }, [search, type, source, categoryFilter, from, to]);
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paginatedTxns = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const total = filtered.reduce((s, t) => s + (t.type === "debit" ? t.amount : -t.amount), 0);
 
   async function setCategory(ids: string[], categoryId: string) {
+    let targetIds = [...ids];
+
+    // If categorizing a single transaction, auto-categorize similar uncategorized ones
+    if (ids.length === 1 && txns) {
+      const targetTx = txns.find(t => t.id === ids[0]);
+      if (targetTx && !targetTx.category_id) {
+        // Find matching name to group by
+        const matchName = targetTx.merchant_name || targetTx.description;
+        if (matchName) {
+          const similarUncategorized = txns.filter(t =>
+            !t.category_id &&
+            t.id !== ids[0] &&
+            (t.merchant_name || t.description) === matchName
+          );
+
+          if (similarUncategorized.length > 0) {
+            const similarIds = similarUncategorized.map(t => t.id);
+            targetIds = [...targetIds, ...similarIds];
+            toast.info(`Auto-categorizing ${similarIds.length} similar transactions`);
+          }
+        }
+      }
+    }
+
     const { error } = await supabase
       .from("transactions")
       .update({ category_id: categoryId, is_manually_categorized: true })
-      .in("id", ids);
+      .in("id", targetIds);
 
     if (error) {
       toast.error("Could not update");
@@ -105,22 +142,22 @@ function TransactionsPage() {
     }
     setSelected([]);
     qc.invalidateQueries();
-    toast.success(ids.length > 1 ? `${ids.length} transactions updated` : "Category updated");
+    toast.success(targetIds.length > 1 ? `${targetIds.length} transactions updated` : "Category updated");
   }
 
   async function removeDuplicates() {
     const ids = redundantIds(duplicates);
     if (!ids.length) return;
-    
+
     setDeletingDups(true);
     const { error } = await supabase.from("transactions").delete().in("id", ids);
     setDeletingDups(false);
-    
+
     if (error) {
       toast.error("Could not remove duplicates");
       return;
     }
-    
+
     qc.invalidateQueries();
     toast.success(`Cleaned up ${ids.length} overlapping duplicate transactions`);
   }
@@ -157,6 +194,7 @@ function TransactionsPage() {
             {filtered.length} results — net {formatMoney(total, currency)}
           </p>
         </div>
+
         <Button variant="outline" size="sm" onClick={exportCsv}>
           <Download className="mr-2 size-4" /> Export CSV
         </Button>
@@ -170,11 +208,11 @@ function TransactionsPage() {
               <span className="font-semibold text-warning">Duplicates detected:</span> Ledger found {duplicates.length} overlapping transaction groups from multiple statement uploads.
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             className="bg-background text-warning border-warning/30 hover:bg-warning/20 hover:text-warning"
-            onClick={removeDuplicates} 
+            onClick={removeDuplicates}
             disabled={deletingDups}
           >
             <Trash2 className="mr-2 size-4" />
@@ -183,7 +221,8 @@ function TransactionsPage() {
         </div>
       )}
 
-      <div className="surface-card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Expanded Grid Layout to support the new Source filter */}
+      <div className="surface-card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-7">
         <div className="relative lg:col-span-2">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -193,6 +232,7 @@ function TransactionsPage() {
             className="pl-9"
           />
         </div>
+
         <Select value={type} onValueChange={setType}>
           <SelectTrigger>
             <SelectValue placeholder="Type" />
@@ -203,6 +243,18 @@ function TransactionsPage() {
             <SelectItem value="credit">Credit</SelectItem>
           </SelectContent>
         </Select>
+
+        <Select value={source} onValueChange={setSource}>
+          <SelectTrigger>
+            <SelectValue placeholder="Source" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All sources</SelectItem>
+            <SelectItem value="imported">Auto-imported</SelectItem>
+            <SelectItem value="manual">Manually added</SelectItem>
+          </SelectContent>
+        </Select>
+
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger>
             <SelectValue placeholder="Category" />
@@ -212,12 +264,15 @@ function TransactionsPage() {
             <SelectItem value="none">Uncategorized</SelectItem>
             {(categories ?? []).map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.icon} {c.name}
+                <div className="flex items-center gap-2">
+                  <CategoryIcon icon={c.icon} className="size-4" /> {c.name}
+                </div>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <div className="flex gap-2">
+
+        <div className="flex gap-2 lg:col-span-2">
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
@@ -233,7 +288,9 @@ function TransactionsPage() {
             <SelectContent>
               {(categories ?? []).map((c) => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.icon} {c.name}
+                  <div className="flex items-center gap-2">
+                    <CategoryIcon icon={c.icon} className="size-4" /> {c.name}
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -267,7 +324,15 @@ function TransactionsPage() {
                     }
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{t.merchant_name || t.description}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium">{t.merchant_name || t.description}</p>
+                      {/* Show visual indicator if manually added */}
+                      {!t.statement_id && (
+                        <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                          Manual
+                        </span>
+                      )}
+                    </div>
                     <p className="truncate text-xs text-muted-foreground">
                       {formatDate(t.date)} — {t.description}
                     </p>
@@ -282,15 +347,16 @@ function TransactionsPage() {
                     <SelectContent>
                       {(categories ?? []).map((c) => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.icon} {c.name}
+                          <div className="flex items-center gap-2">
+                            <CategoryIcon icon={c.icon} className="size-4" /> {c.name}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <span
-                    className={`w-28 shrink-0 text-right text-sm font-semibold ${
-                      t.type === "credit" ? "text-success" : ""
-                    }`}
+                    className={`w-28 shrink-0 text-right text-sm font-semibold ${t.type === "credit" ? "text-success" : ""
+                      }`}
                   >
                     {t.type === "credit" ? "+" : "-"}
                     {formatMoney(t.amount, currency)}
@@ -298,14 +364,14 @@ function TransactionsPage() {
                 </li>
               ))}
             </ul>
-            
+
             {/* Pagination Controls */}
             {totalPages > 1 && (
               <div className="border-t border-border p-4">
                 <Pagination>
                   <PaginationContent>
                     <PaginationItem>
-                      <PaginationPrevious 
+                      <PaginationPrevious
                         onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                         className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                       />
@@ -316,7 +382,7 @@ function TransactionsPage() {
                       </span>
                     </PaginationItem>
                     <PaginationItem>
-                      <PaginationNext 
+                      <PaginationNext
                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
                       />

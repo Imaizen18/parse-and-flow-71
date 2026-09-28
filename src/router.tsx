@@ -9,7 +9,14 @@ export const getRouter = () => {
     routeTree,
     context: { queryClient },
     scrollRestoration: true,
-    defaultPreloadStaleTime: 0,
+    // Start preloading faster when hovering links
+    defaultPreloadDelay: 50,
+    defaultPreload: "intent",
+    // Keep data fresh longer to avoid refetching lag during transitions
+    defaultPreloadStaleTime: 1000 * 60 * 5, 
+    // Make transitions feel instant by rendering fallback quickly
+    defaultPendingMinMs: 0,
+    defaultPendingComponent: () => null,
   });
 
   return router;

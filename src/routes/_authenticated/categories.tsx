@@ -28,7 +28,9 @@ export const Route = createFileRoute("/_authenticated/categories")({
   component: CategoriesPage,
 });
 
-const EMOJIS = ["🍔", "🚗", "🛒", "🏠", "💊", "🎬", "👗", "📱", "✈️", "🎓", "💼", "💰", "🐾", "🎁"];
+import { CategoryIcon, CATEGORY_ICONS } from "@/components/category-icon";
+
+const ICON_NAMES = Object.keys(CATEGORY_ICONS);
 
 function CategoriesPage() {
   const qc = useQueryClient();
@@ -36,7 +38,7 @@ function CategoriesPage() {
   const { data: rules } = useKeywordRules();
 
   const [name, setName] = useState("");
-  const [icon, setIcon] = useState("🎁");
+  const [icon, setIcon] = useState("Gift");
   const [color, setColor] = useState("#22c55e");
 
   const [keyword, setKeyword] = useState("");
@@ -99,7 +101,7 @@ function CategoriesPage() {
               key={c.id}
               className="flex items-center gap-3 rounded-lg border border-border bg-secondary/40 px-3 py-2.5"
             >
-              <span className="text-lg">{c.icon}</span>
+              <CategoryIcon icon={c.icon} className="size-5" />
               <span className="flex-1 truncate text-sm font-medium">{c.name}</span>
               <span
                 className="size-3 rounded-full"
@@ -130,9 +132,11 @@ function CategoriesPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {EMOJIS.map((e) => (
+                {ICON_NAMES.map((e) => (
                   <SelectItem key={e} value={e}>
-                    {e}
+                    <div className="flex items-center gap-2">
+                      <CategoryIcon icon={e} className="size-4" />
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -174,7 +178,7 @@ function CategoriesPage() {
                 <span className="font-mono">{r.keyword}</span>
                 <span className="text-muted-foreground">→</span>
                 <span className="flex-1">
-                  {cat?.icon} {cat?.name}
+                  {cat ? <CategoryIcon icon={cat.icon} className="mr-1 inline-block size-4" /> : null} {cat?.name}
                 </span>
                 <Button variant="ghost" size="icon" onClick={() => removeRule(r.id)}>
                   <Trash2 className="size-4" />
@@ -204,7 +208,9 @@ function CategoriesPage() {
               <SelectContent>
                 {(categories ?? []).map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {c.icon} {c.name}
+                    <div className="flex items-center gap-2">
+                      <CategoryIcon icon={c.icon} className="size-4" /> {c.name}
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>

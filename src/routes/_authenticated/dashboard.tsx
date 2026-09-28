@@ -17,9 +17,11 @@ import {
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, PiggyBank, TrendingUp } from "lucide-react";
 import { useBudgets, useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
 import { formatCompact, formatMoney, monthKey, monthLabel, daysLeftInMonth } from "@/lib/format";
+import { findOffsettingTransactions } from "@/lib/offsetting";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { CategoryIcon } from "@/components/category-icon";
 import {
   Select,
   SelectContent,
@@ -82,6 +84,9 @@ function Dashboard() {
   const { data: txns, isLoading } = useTransactions();
   const { data: categories } = useCategories();
 
+  // Extract offsetting/suspicious transaction IDs to filter them out of calculations
+  const { suspiciousIds } = useMemo(() => findOffsettingTransactions(txns ?? []), [txns]);
+
   // Initialize immediately from localStorage to prevent UI flickering on refresh
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     return localStorage.getItem("dashboard_month") || "";
@@ -102,13 +107,14 @@ function Dashboard() {
       const backendMonth = profile?.dashboard_month;
       const targetMonth = backendMonth || localStorage.getItem("dashboard_month");
       
-      if (targetMonth && availableMonths.includes(targetMonth)) {
+      const isValidTarget = targetMonth === "all" || availableMonths.includes(targetMonth);
+
+      if (targetMonth && isValidTarget) {
         if (selectedMonth !== targetMonth) {
           setSelectedMonth(targetMonth);
           localStorage.setItem("dashboard_month", targetMonth);
         }
-      } else if (!availableMonths.includes(selectedMonth)) {
-        // Fallback to the latest month if the saved one doesn't exist in data
+      } else if (selectedMonth !== "all" && !availableMonths.includes(selectedMonth)) {
         setSelectedMonth(availableMonths[0]);
         localStorage.setItem("dashboard_month", availableMonths[0]);
       }
@@ -125,18 +131,24 @@ function Dashboard() {
     }
   }
 
-  const { data: budgets } = useBudgets(selectedMonth ? `${selectedMonth}-01` : monthKey(now));
+  // Pass current month to budgets hook to avoid invalid date formatting if "all" is selected
+  const budgetMonthKey = selectedMonth === "all" || !selectedMonth ? monthKey(now) : `${selectedMonth}-01`;
+  const { data: budgets } = useBudgets(budgetMonthKey);
 
   const catById = useMemo(
     () => Object.fromEntries((categories ?? []).map((c) => [c.id, c])),
     [categories],
   );
 
-  // Filter transactions exactly to the selected month dropdown
+  // Filter transactions exactly to the selected month dropdown OR show all
+  // IMPORTANT: We explicitly exclude any suspicious offset matches here
   const displayTxns = useMemo(() => {
     if (!txns || !selectedMonth) return [];
-    return txns.filter((t) => t.date.startsWith(selectedMonth));
-  }, [txns, selectedMonth]);
+    const validTxns = txns.filter(t => !suspiciousIds.has(t.id)); // <-- Filter applied
+    
+    if (selectedMonth === "all") return validTxns;
+    return validTxns.filter((t) => t.date.startsWith(selectedMonth));
+  }, [txns, selectedMonth, suspiciousIds]);
 
   const spent = displayTxns.filter((t) => t.type === "debit").reduce((s, t) => s + t.amount, 0);
   const income = displayTxns.filter((t) => t.type === "credit").reduce((s, t) => s + t.amount, 0);
@@ -145,14 +157,28 @@ function Dashboard() {
   const uncategorized = displayTxns.filter((t) => !t.category_id).length;
 
   const cashFlow = useMemo(() => {
-    if (!selectedMonth) return [];
+    if (!selectedMonth || !txns?.length) return [];
+    const validTxns = txns.filter(t => !suspiciousIds.has(t.id));
+    const out: { day: string; income: number; expense: number }[] = [];
+    let ci = 0;
+    let ce = 0;
+
+    // If 'all' is selected, plot cumulative growth month-by-month
+    if (selectedMonth === "all") {
+      const sortedMonths = [...availableMonths].reverse(); // chronological order
+      for (const m of sortedMonths) {
+        const monthTx = validTxns.filter((t) => t.date.startsWith(m));
+        ci += monthTx.filter((t) => t.type === "credit").reduce((s, t) => s + t.amount, 0);
+        ce += monthTx.filter((t) => t.type === "debit").reduce((s, t) => s + t.amount, 0);
+        out.push({ day: monthLabel(`${m}-01`).split(" ")[0] || m, income: ci, expense: ce });
+      }
+      return out;
+    }
+
+    // Otherwise, plot cumulative growth day-by-day for the specific month
     const [year, month] = selectedMonth.split('-').map(Number);
     const days = new Date(year, month, 0).getDate(); 
     const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
-
-    let ci = 0;
-    let ce = 0;
-    const out: { day: string; income: number; expense: number }[] = [];
 
     for (let d = 1; d <= days; d++) {
       const dayStr = `${selectedMonth}-${String(d).padStart(2, "0")}`;
@@ -166,7 +192,7 @@ function Dashboard() {
       }
     }
     return out;
-  }, [displayTxns, selectedMonth, now]);
+  }, [displayTxns, selectedMonth, now, txns, availableMonths, suspiciousIds]);
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
@@ -192,12 +218,12 @@ function Dashboard() {
       const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
       const total = (txns ?? [])
-        .filter((t) => t.type === "debit" && new Date(t.date) >= start && new Date(t.date) < end)
+        .filter((t) => !suspiciousIds.has(t.id) && t.type === "debit" && new Date(t.date) >= start && new Date(t.date) < end)
         .reduce((s, t) => s + t.amount, 0);
       out.push({ month: monthLabel(start).split(" ")[0]!, spent: total });
     }
     return out;
-  }, [txns, now]);
+  }, [txns, now, suspiciousIds]);
 
   const recent = displayTxns.slice(0, 12);
   
@@ -207,7 +233,6 @@ function Dashboard() {
       .sort((a, b) => b.amount - a.amount);
   }, [displayTxns, suspiciousLimit]);
 
-  // Block rendering until data is loaded and the month is fully resolved
   if (isLoading || (txns?.length && !selectedMonth)) {
     return (
       <div className="space-y-4">
@@ -248,6 +273,7 @@ function Dashboard() {
               <SelectValue placeholder="Select month" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">All time</SelectItem>
               {availableMonths.map((m) => (
                 <SelectItem key={m} value={m}>
                   {monthLabel(`${m}-01`)}
@@ -260,7 +286,9 @@ function Dashboard() {
           </span>
         </div>
         <p className="text-sm text-muted-foreground">
-          {selectedMonth === monthKey(now).slice(0, 7) 
+          {selectedMonth === "all" 
+            ? "Viewing historical data for all time"
+            : selectedMonth === monthKey(now).slice(0, 7) 
             ? `${daysLeftInMonth()} days left in the month` 
             : `Viewing historical data for ${monthLabel(`${selectedMonth}-01`)}`}
         </p>
@@ -388,7 +416,7 @@ function Dashboard() {
                     style={{ backgroundColor: c.color }}
                     aria-hidden
                   />
-                  {c.icon} {c.name}
+                  <CategoryIcon icon={c.icon} className="size-4" /> {c.name}
                 </span>
                 <span className="font-medium">
                   {spent > 0 ? Math.round((c.value / spent) * 100) : 0}%
@@ -399,7 +427,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {!!budgets?.length && (
+      {selectedMonth !== "all" && !!budgets?.length && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {budgets.map((b) => {
             const used = byCategory.find((c) => c.id === b.category_id)?.value ?? 0;
@@ -412,7 +440,11 @@ function Dashboard() {
               <div key={b.id} className="surface-card p-5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">
-                    {b.category_id ? `${cat?.icon ?? ""} ${cat?.name ?? "Category"}` : "Overall monthly budget"}
+                    {b.category_id ? (
+                      <span className="flex items-center gap-2">
+                        {cat && <CategoryIcon icon={cat.icon} className="size-4" />} {cat?.name ?? "Category"}
+                      </span>
+                    ) : "Overall monthly budget"}
                   </span>
                   <span className={`text-sm font-semibold ${tone}`}>{pct}%</span>
                 </div>
@@ -442,7 +474,7 @@ function Dashboard() {
               return (
                 <li key={t.id} className="flex items-center gap-3 py-2.5">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-base">
-                    {cat?.icon ?? "❓"}
+                    {cat ? <CategoryIcon icon={cat.icon} className="size-5" /> : "❓"}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
@@ -465,7 +497,7 @@ function Dashboard() {
           </ul>
         </div>
       )}
-
+      
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="surface-card p-5 lg:col-span-3">
           <div className="flex items-center justify-between">

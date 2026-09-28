@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
 import { formatCompact, formatMoney, monthLabel } from "@/lib/format";
+import { findOffsettingTransactions } from "@/lib/offsetting";
 
 export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({
@@ -36,17 +37,21 @@ function ReportsPage() {
   const { data: txns } = useTransactions();
   const { data: categories } = useCategories();
 
+  // Exclude matching send/receive pairs so they don't corrupt the reporting
+  const { suspiciousIds } = useMemo(() => findOffsettingTransactions(txns ?? []), [txns]);
+  const validTxns = useMemo(() => (txns ?? []).filter(t => !suspiciousIds.has(t.id)), [txns, suspiciousIds]);
+
   const catById = useMemo(
     () => Object.fromEntries((categories ?? []).map((c) => [c.id, c])),
     [categories],
   );
 
-  const debits = useMemo(() => (txns ?? []).filter((t) => t.type === "debit"), [txns]);
-  const credits = useMemo(() => (txns ?? []).filter((t) => t.type === "credit"), [txns]);
+  const debits = useMemo(() => validTxns.filter((t) => t.type === "debit"), [validTxns]);
+  const credits = useMemo(() => validTxns.filter((t) => t.type === "credit"), [validTxns]);
 
   const monthly = useMemo(() => {
     const map = new Map<string, { spent: number; earned: number }>();
-    for (const t of txns ?? []) {
+    for (const t of validTxns) {
       const key = t.date.slice(0, 7);
       const row = map.get(key) ?? { spent: 0, earned: 0 };
       if (t.type === "debit") row.spent += t.amount;
@@ -57,7 +62,7 @@ function ReportsPage() {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-12)
       .map(([key, v]) => ({ month: monthLabel(`${key}-01`), ...v }));
-  }, [txns]);
+  }, [validTxns]);
 
   const topMerchants = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
@@ -166,7 +171,7 @@ function ReportsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Insights</h1>
         <p className="text-sm text-muted-foreground">
-          Patterns pulled from {txns.length} transactions.
+          Patterns pulled from {validTxns.length} valid transactions.
         </p>
       </div>
 
