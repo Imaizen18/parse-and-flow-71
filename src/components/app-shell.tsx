@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background relative">
+    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-background relative">
       <aside className="border-sidebar-border bg-sidebar fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r p-4 lg:flex">
         <div className="flex items-center justify-between">
           <Brand />

@@ -383,7 +383,7 @@ export function GlobalAddTransaction() {
         {/* ── Manual form ───────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="grid gap-5 pt-1">
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="type">Type</Label>
               <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}>
