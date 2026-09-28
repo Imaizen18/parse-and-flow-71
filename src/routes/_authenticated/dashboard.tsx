@@ -269,7 +269,7 @@ function Dashboard() {
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <Select value={selectedMonth} onValueChange={handleMonthChange}>
-            <SelectTrigger className="w-[220px] text-2xl font-bold h-auto border-none bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:ml-2">
+            <SelectTrigger className="w-auto text-2xl font-bold h-auto border-none bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:ml-2">
               <SelectValue placeholder="Select month" />
             </SelectTrigger>
             <SelectContent>

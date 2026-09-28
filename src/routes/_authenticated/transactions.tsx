@@ -341,7 +341,7 @@ function TransactionsPage() {
                     value={t.category_id ?? ""}
                     onValueChange={(v) => setCategory([t.id], v)}
                   >
-                    <SelectTrigger className="w-44 shrink-0">
+                    <SelectTrigger className="w-[140px] sm:w-44 shrink-0">
                       <SelectValue placeholder="Uncategorized" />
                     </SelectTrigger>
                     <SelectContent>
@@ -355,7 +355,7 @@ function TransactionsPage() {
                     </SelectContent>
                   </Select>
                   <span
-                    className={`w-28 shrink-0 text-right text-sm font-semibold ${t.type === "credit" ? "text-success" : ""
+                    className={`shrink-0 text-right text-sm font-semibold sm:w-28 ${t.type === "credit" ? "text-success" : ""
                       }`}
                   >
                     {t.type === "credit" ? "+" : "-"}
