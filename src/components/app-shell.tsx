@@ -10,8 +10,9 @@ import {
   LogOut,
   Menu,
   AlertCircle,
+  Handshake,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,11 +20,14 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/s
 import { GlobalAddTransaction } from "@/components/global-add-transaction";
 import { NotificationsPopover } from "@/components/notifications-popover";
 import { NotificationGenerator } from "@/components/notification-generator";
+import { CategorySeeder } from "@/components/category-seeder";
+import { useQueryClient } from "@tanstack/react-query";
 
 const nav = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/upload", label: "Upload", icon: Upload },
   { to: "/transactions", label: "Transactions", icon: Receipt },
+  { to: "/loans", label: "Loans", icon: Handshake },
   { to: "/categories", label: "Categories", icon: Tags },
   { to: "/budgets", label: "Budgets", icon: Wallet },
   { to: "/reports", label: "Insights", icon: Sparkles },
@@ -71,7 +75,15 @@ function Brand() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+
+  // When CategorySeeder creates new categories, refresh the cache
+  useEffect(() => {
+    const handler = () => qc.invalidateQueries({ queryKey: ["categories"] });
+    window.addEventListener("categories-seeded", handler);
+    return () => window.removeEventListener("categories-seeded", handler);
+  }, [qc]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -123,7 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link
             key={item.to}
             to={item.to}
-            className="flex flex-col items-center gap-1 rounded-md px-3 py-1 text-[11px] text-muted-foreground [&.active]:text-primary"
+            className="flex flex-col items-center gap-1 rounded-md px-2 py-1 text-[10px] text-muted-foreground [&.active]:text-primary"
             activeProps={{ className: "active" }}
           >
             <item.icon className="size-5" />
@@ -137,6 +149,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Background Notification Generator */}
       <NotificationGenerator />
+
+      {/* Auto-seed system categories (Loan, Temporary, Income) if missing */}
+      <CategorySeeder />
     </div>
   );
 }

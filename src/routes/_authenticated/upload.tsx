@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileSpreadsheet, Loader2, Trash2, UploadCloud } from "lucide-react";
+import { FileSpreadsheet, Loader2, Trash2, UploadCloud, Download } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useCategories, useKeywordRules, useStatements } from "@/hooks/use-app-data";
@@ -81,10 +81,10 @@ function UploadPage() {
           let categoryId: string | null = null;
           const rule = ruleList.find((x) => text.includes(x.keyword));
           if (rule) categoryId = rule.categoryId;
-          else if (r.type === "credit") categoryId = incomeId;
-          else {
+          // NOTE: Credits are NOT auto-assigned to Income — user must categorize manually
+          else if (r.type === "debit") {
             const guess = guessCategoryName(text);
-            categoryId = guess ? (catByName.get(guess.toLowerCase()) ?? null) : uncategorizedId;
+            categoryId = guess ? (catByName.get(guess.toLowerCase()) ?? null) : null;
           }
           return {
             user_id: userId,
@@ -136,6 +136,26 @@ function UploadPage() {
     await supabase.from("bank_statements").delete().eq("id", id);
     qc.invalidateQueries();
     toast.success("Statement and its transactions removed");
+  }
+
+  async function downloadStatement(statementId: string, fileName: string) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("date,description,merchant_name,amount,type,category_id")
+      .eq("statement_id", statementId)
+      .order("date", { ascending: false });
+    if (error || !data?.length) { toast.error("No transactions found for this statement"); return; }
+    const header = ["Date", "Description", "Merchant", "Amount", "Type"];
+    const lines = data.map((t) =>
+      [t.date, `"${t.description}"`, `"${t.merchant_name ?? ""}"`, t.amount, t.type].join(",")
+    );
+    const csv = [header.join(","), ...lines].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName.replace(/\.(csv|xlsx|xls|txt)$/i, "") + "-transactions.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -220,7 +240,10 @@ function UploadPage() {
                 >
                   {s.status}
                 </Badge>
-                <Button variant="ghost" size="icon" onClick={() => remove(s.id)}>
+                <Button variant="ghost" size="icon" title="Download transactions as CSV" onClick={() => downloadStatement(s.id, s.file_name)}>
+                  <Download className="size-4" />
+                </Button>
+                <Button variant="ghost" size="icon" title="Delete statement" onClick={() => remove(s.id)}>
                   <Trash2 className="size-4" />
                 </Button>
               </li>

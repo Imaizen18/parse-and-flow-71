@@ -53,25 +53,34 @@ const MONTHS: Record<string, number> = {
 };
 
 function iso(y: number, m: number, d: number): string | null {
+  // Build the ISO string DIRECTLY — never use Date.UTC or new Date() here,
+  // because those apply timezone offsets and shift the date by ±1 day.
   if (m < 0 || m > 11 || d < 1 || d > 31) return null;
-  const date = new Date(Date.UTC(y, m, d));
-  if (isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
+  const yy = String(y).padStart(4, "0");
+  const mm = String(m + 1).padStart(2, "0");
+  const dd = String(d).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 export function toDate(v: unknown): string | null {
-  if (v instanceof Date && !isNaN(v.getTime()))
-    return iso(v.getFullYear(), v.getMonth(), v.getDate());
+  // Excel / XLSX serial date number (e.g. 45544)
   if (typeof v === "number") {
+    // Excel epoch: Jan 1 1900 = serial 1. Adjust for Excel's leap-year bug.
     const d = new Date(Math.round((v - 25569) * 86400 * 1000));
-    return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    if (isNaN(d.getTime())) return null;
+    // Use getUTC* to avoid local timezone shift
+    return iso(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   }
+  if (v instanceof Date && !isNaN(v.getTime()))
+    // Use getUTC* so that "2026-09-09T00:00:00Z" doesn't become Sep 8 in IST
+    return iso(v.getUTCFullYear(), v.getUTCMonth(), v.getUTCDate());
+
   let s = String(v ?? "").trim();
   if (!s) return null;
   // strip time portion / timezone noise
   s = s.replace(/\b\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?\b/i, "").replace(/\s+/g, " ").trim();
 
-  // 2024-08-12 or 2024/08/12
+  // 2024-08-12 or 2024/08/12 — already in YYYY-MM-DD, take as-is
   const ymd = s.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/);
   if (ymd) return iso(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
 
@@ -95,7 +104,7 @@ export function toDate(v: unknown): string | null {
     }
   }
 
-  // 12/08/2024 — day-first unless the first part is clearly a month-only value
+  // 12/08/2024 — day-first unless the first part is clearly > 12
   const dmy = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
   if (dmy) {
     let a = Number(dmy[1]);
@@ -107,8 +116,16 @@ export function toDate(v: unknown): string | null {
     return iso(y, b - 1, a); // default day-first (most bank exports)
   }
 
-  const parsed = new Date(s);
-  return isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  // Last resort — parse as local date using split to avoid timezone shift
+  const parts = s.split(/[-/.]/);
+  if (parts.length === 3) {
+    const [p1, p2, p3] = parts.map(Number);
+    if (!isNaN(p1!) && !isNaN(p2!) && !isNaN(p3!)) {
+      // Try YYYY-MM-DD first
+      if (p1! > 31) return iso(p1!, p2! - 1, p3!);
+    }
+  }
+  return null;
 }
 
 const NOISE =

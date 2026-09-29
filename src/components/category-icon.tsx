@@ -20,7 +20,10 @@ import {
   Wifi,
   Zap,
   TrendingUp,
-  Tag
+  Tag,
+  Handshake,
+  Clock,
+  ArrowLeftRight,
 } from "lucide-react";
 
 export const CATEGORY_ICONS = {
@@ -45,7 +48,10 @@ export const CATEGORY_ICONS = {
   Wifi,
   Zap,
   TrendingUp,
-  Tag
+  Tag,
+  Handshake,
+  Clock,
+  ArrowLeftRight,
 };
 
 export type CategoryIconName = keyof typeof CATEGORY_ICONS;

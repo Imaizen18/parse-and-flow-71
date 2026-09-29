@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useCategories } from "@/hooks/use-app-data";
 import { CategoryIcon } from "@/components/category-icon";
+import { CreateCategoryDialog } from "@/components/create-category-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -210,6 +211,7 @@ export function GlobalAddTransaction() {
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showCreateCat, setShowCreateCat] = useState(false);
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -454,7 +456,10 @@ export function GlobalAddTransaction() {
             <Label htmlFor="category">Category</Label>
             <Select
               value={form.category_id}
-              onValueChange={(v) => setForm((f) => ({ ...f, category_id: v }))}
+              onValueChange={(v) => {
+                if (v === "new-category") setShowCreateCat(true);
+                else setForm((f) => ({ ...f, category_id: v }));
+              }}
             >
               <SelectTrigger className={scanning ? "opacity-50 pointer-events-none" : ""}>
                 <SelectValue />
@@ -468,6 +473,11 @@ export function GlobalAddTransaction() {
                     </div>
                   </SelectItem>
                 ))}
+                <SelectItem value="new-category" className="text-primary font-medium mt-1 border-t">
+                  <div className="flex items-center gap-2">
+                    <Plus className="size-4" /> Add new category
+                  </div>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -513,6 +523,9 @@ export function GlobalAddTransaction() {
           </DialogFooter>
         </form>
       </DialogContent>
+
+      {/* Internal dialog for creating new category */}
+      <CreateCategoryDialog open={showCreateCat} onOpenChange={setShowCreateCat} />
     </Dialog>
   );
 }

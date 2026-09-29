@@ -140,15 +140,28 @@ function Dashboard() {
     [categories],
   );
 
+  // Collect IDs of "neutral" categories (Loan, Temporary) that should not count
+  const neutralCategoryIds = useMemo(() => {
+    if (!categories) return new Set<string>();
+    const neutralNames = ["loan", "loans", "temporary", "temp"];
+    return new Set(
+      categories
+        .filter((c) => neutralNames.includes(c.name.toLowerCase().trim()))
+        .map((c) => c.id)
+    );
+  }, [categories]);
+
   // Filter transactions exactly to the selected month dropdown OR show all
-  // IMPORTANT: We explicitly exclude any suspicious offset matches here
+  // IMPORTANT: We explicitly exclude suspicious offset matches AND neutral-category transactions
   const displayTxns = useMemo(() => {
     if (!txns || !selectedMonth) return [];
-    const validTxns = txns.filter(t => !suspiciousIds.has(t.id)); // <-- Filter applied
+    const validTxns = txns.filter(
+      (t) => !suspiciousIds.has(t.id) && !(t.category_id && neutralCategoryIds.has(t.category_id))
+    );
     
     if (selectedMonth === "all") return validTxns;
     return validTxns.filter((t) => t.date.startsWith(selectedMonth));
-  }, [txns, selectedMonth, suspiciousIds]);
+  }, [txns, selectedMonth, suspiciousIds, neutralCategoryIds]);
 
   const spent = displayTxns.filter((t) => t.type === "debit").reduce((s, t) => s + t.amount, 0);
   const income = displayTxns.filter((t) => t.type === "credit").reduce((s, t) => s + t.amount, 0);

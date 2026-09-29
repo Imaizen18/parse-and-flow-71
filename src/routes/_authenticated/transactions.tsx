@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, Search, AlertCircle, Trash2 } from "lucide-react";
+import { Download, Search, AlertCircle, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useCategories, useProfile, useTransactions } from "@/hooks/use-app-data";
 import { formatDate, formatMoney } from "@/lib/format";
 import { findDuplicates, redundantIds } from "@/lib/duplicates";
 import { CategoryIcon } from "@/components/category-icon";
+import { CreateCategoryDialog } from "@/components/create-category-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -54,6 +55,7 @@ function TransactionsPage() {
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [deletingDups, setDeletingDups] = useState(false);
+  const [showCreateCat, setShowCreateCat] = useState(false);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -107,27 +109,45 @@ function TransactionsPage() {
   const total = filtered.reduce((s, t) => s + (t.type === "debit" ? t.amount : -t.amount), 0);
 
   async function setCategory(ids: string[], categoryId: string) {
+    if (categoryId === "new-category") {
+      setShowCreateCat(true);
+      return;
+    }
+    
     let targetIds = [...ids];
 
-    // If categorizing a single transaction, auto-categorize similar uncategorized ones
-    if (ids.length === 1 && txns) {
-      const targetTx = txns.find(t => t.id === ids[0]);
-      if (targetTx && !targetTx.category_id) {
-        // Find matching name to group by
-        const matchName = targetTx.merchant_name || targetTx.description;
-        if (matchName) {
-          const similarUncategorized = txns.filter(t =>
-            !t.category_id &&
-            t.id !== ids[0] &&
-            (t.merchant_name || t.description) === matchName
-          );
+    // Aggressively auto-categorize similar uncategorized transactions
+    if (txns && txns.length > 0) {
+      const norm = (s: string | null | undefined) =>
+        (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
-          if (similarUncategorized.length > 0) {
-            const similarIds = similarUncategorized.map(t => t.id);
-            targetIds = [...targetIds, ...similarIds];
-            toast.info(`Auto-categorizing ${similarIds.length} similar transactions`);
+      // Get the merchant_name of the transaction(s) being categorized
+      // We only auto-fill by merchant_name (if present), never mix with description
+      const sourceTxs = ids.map(id => txns.find(x => x.id === id)).filter(Boolean) as typeof txns;
+
+      const similarUncategorized = txns.filter(t => {
+        if (ids.includes(t.id)) return false;      // skip the one(s) being set
+        if (t.category_id !== null) return false;  // skip already-categorised
+
+        return sourceTxs.some(src => {
+          if (src.merchant_name && t.merchant_name) {
+            // Both have a merchant_name — compare those
+            return norm(src.merchant_name) === norm(t.merchant_name);
           }
-        }
+          if (!src.merchant_name && !t.merchant_name) {
+            // Neither has a merchant_name — compare descriptions
+            return norm(src.description) === norm(t.description);
+          }
+          return false; // don't cross-compare merchant_name with description
+        });
+      });
+
+      console.log("[AutoCat] matches:", similarUncategorized.map(t => t.merchant_name || t.description));
+
+      if (similarUncategorized.length > 0) {
+        const similarIds = similarUncategorized.map(t => t.id);
+        targetIds = [...targetIds, ...similarIds];
+        toast.success(`Auto-filled category for ${similarIds.length} similar transactions!`);
       }
     }
 
@@ -255,7 +275,13 @@ function TransactionsPage() {
           </SelectContent>
         </Select>
 
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+        <Select 
+          value={categoryFilter} 
+          onValueChange={(v) => {
+            if (v === "new-category") setShowCreateCat(true);
+            else setCategoryFilter(v);
+          }}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Category" />
           </SelectTrigger>
@@ -293,6 +319,11 @@ function TransactionsPage() {
                   </div>
                 </SelectItem>
               ))}
+              <SelectItem value="new-category" className="text-primary font-medium mt-1 border-t">
+                <div className="flex items-center gap-2">
+                  <Plus className="size-4" /> Add new category
+                </div>
+              </SelectItem>
             </SelectContent>
           </Select>
           <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
@@ -316,17 +347,18 @@ function TransactionsPage() {
           <>
             <ul className="divide-y divide-border">
               {paginatedTxns.map((t) => (
-                <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <Checkbox
-                    checked={selected.includes(t.id)}
-                    onCheckedChange={(v) =>
-                      setSelected((s) => (v ? [...s, t.id] : s.filter((x) => x !== t.id)))
-                    }
-                  />
-                  <div className="min-w-0 flex-1">
+                <li key={t.id} className="grid grid-cols-[auto_1fr_auto] sm:grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 gap-y-2 px-4 py-3">
+                  <div className="flex items-center h-full pt-0.5 sm:pt-0">
+                    <Checkbox
+                      checked={selected.includes(t.id)}
+                      onCheckedChange={(v) =>
+                        setSelected((s) => (v ? [...s, t.id] : s.filter((x) => x !== t.id)))
+                      }
+                    />
+                  </div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-medium">{t.merchant_name || t.description}</p>
-                      {/* Show visual indicator if manually added */}
                       {!t.statement_id && (
                         <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                           Manual
@@ -337,30 +369,38 @@ function TransactionsPage() {
                       {formatDate(t.date)} — {t.description}
                     </p>
                   </div>
-                  <Select
-                    value={t.category_id ?? ""}
-                    onValueChange={(v) => setCategory([t.id], v)}
-                  >
-                    <SelectTrigger className="w-[140px] sm:w-44 shrink-0">
-                      <SelectValue placeholder="Uncategorized" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(categories ?? []).map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          <div className="flex items-center gap-2">
-                            <CategoryIcon icon={c.icon} className="size-4" /> {c.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <span
-                    className={`shrink-0 text-right text-sm font-semibold sm:w-28 ${t.type === "credit" ? "text-success" : ""
+                    className={`col-start-3 sm:col-start-4 shrink-0 text-right text-sm font-semibold sm:w-28 ${t.type === "credit" ? "text-success" : ""
                       }`}
                   >
                     {t.type === "credit" ? "+" : "-"}
                     {formatMoney(t.amount, currency)}
                   </span>
+
+                  <div className="col-start-2 col-end-4 sm:col-start-3 sm:col-end-4 sm:row-start-1">
+                    <Select
+                      value={t.category_id ?? ""}
+                      onValueChange={(v) => setCategory([t.id], v)}
+                    >
+                      <SelectTrigger className="w-full sm:w-44 h-8 sm:h-9 text-xs sm:text-sm">
+                        <SelectValue placeholder="Uncategorized" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(categories ?? []).map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            <div className="flex items-center gap-2 text-xs sm:text-sm">
+                              <CategoryIcon icon={c.icon} className="size-3.5 sm:size-4" /> {c.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="new-category" className="text-primary font-medium mt-1 border-t">
+                          <div className="flex items-center gap-2 text-xs sm:text-sm">
+                            <Plus className="size-3.5 sm:size-4" /> Add new category
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -394,6 +434,8 @@ function TransactionsPage() {
           </>
         )}
       </div>
+
+      <CreateCategoryDialog open={showCreateCat} onOpenChange={setShowCreateCat} />
     </div>
   );
 }
